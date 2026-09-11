@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGIS Portal - PT. PILOT DRONE INDONESIA UTAMA</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
+    
+    <!-- Modul Transformasi Proyeksi & GeoTIFF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+    <script src="https://unpkg.com/georaster"></script>
+    <script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    },
+                    colors: {
+                        gis: {
+                            dark: '#070b14',
+                            navy: '#0f172a',
+                            panel: '#1e293b',
+                            border: '#334155',
+                            accent: '#22c55e',
+                            cyan: '#06b6d4',
+                            amber: '#f59e0b',
+                            rose: '#f43f5e'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #22c55e; }
+
+        .leaflet-container {
+            background-color: #070b14 !important;
+            font-family: 'Inter', sans-serif;
+        }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background: #1e293b !important;
+            color: #f8fafc !important;
+            border: 1px solid #334155;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+        }
+        .leaflet-popup-content { margin: 12px 16px; font-size: 13px; }
+        .leaflet-control-zoom a {
+            background-color: #1e293b !important;
+            color: #f8fafc !important;
+            border-color: #334155 !important;
+        }
+        .leaflet-control-zoom a:hover {
+            background-color: #334155 !important;
+            color: #22c55e !important;
+        }
+    </style>
+</head>
+<body class="bg-gis-dark text-slate-100 font-sans h-screen flex flex-col overflow-hidden select-none">
+
+    <header class="h-14 bg-gis-navy border-b border-gis-border flex items-center justify-between px-4 z-30 shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="bg-brand-500/10 p-2 rounded-lg border border-emerald-500/30 text-emerald-400">
+                <i data-lucide="layers" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="text-sm font-bold tracking-wide text-white flex items-center gap-2">
+                    PILOT DRONE GEOSPATIAL PORTAL
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">WebGIS v3.4</span>
+                </h1>
+                <p class="text-[11px] text-slate-400 font-mono">PT. Pilot Drone Indonesia Utama &bull; GeoTIFF Raster Support</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4 text-xs font-mono">
+            <div class="hidden md:flex items-center gap-2 bg-gis-panel px-3 py-1.5 rounded-lg border border-gis-border">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                <span class="text-slate-400">Engine:</span>
+                <span class="text-white font-semibold">GeoRaster + Proj4 Engine</span>
+            </div>
+            <div class="hidden sm:flex items-center gap-2 bg-gis-panel px-3 py-1.5 rounded-lg border border-gis-border">
+                <i data-lucide="map-pin" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span id="header-coords" class="text-slate-300">Lat: -6.2845, Lon: 106.7214</span>
+            </div>
+            <button onclick="resetMapView()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-900 font-bold rounded-lg transition flex items-center gap-1.5">
+                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> Reset View
+            </button>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden relative">
+        <aside id="sidebar" class="w-80 md:w-96 bg-gis-navy border-r border-gis-border flex flex-col z-20 shrink-0 transition-all duration-300">
+            <div class="flex border-b border-gis-border bg-gis-dark/50">
+                <button onclick="switchTab('layers')" id="tab-btn-layers" class="flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-2 border-b-2 border-emerald-500 text-emerald-400 bg-gis-panel/40">
+                    <i data-lucide="layers" class="w-4 h-4"></i> Layers
+                </button>
+                <button onclick="switchTab('upload')" id="tab-btn-upload" class="flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-2 border-b-2 border-transparent text-slate-400 hover:text-white">
+                    <i data-lucide="upload-cloud" class="w-4 h-4"></i> Input Data
+                </button>
+                <button onclick="switchTab('tools')" id="tab-btn-tools" class="flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-2 border-b-2 border-transparent text-slate-400 hover:text-white">
+                    <i data-lucide="ruler" class="w-4 h-4"></i> Tools
+                </button>
+            </div>
+
+            <div id="tab-content-layers" class="flex-1 overflow-y-auto p-4 space-y-6">
+                <div>
+                    <h3 class="text-xs font-mono text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <i data-lucide="globe" class="w-3.5 h-3.5 text-emerald-400"></i> Base Maps
+                    </h3>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="setBasemap('dark')" id="base-dark" class="p-2 text-center rounded-lg border border-emerald-500 bg-emerald-500/10 text-xs font-medium text-white">Dark Vector</button>
+                        <button onclick="setBasemap('satellite')" id="base-satellite" class="p-2 text-center rounded-lg border border-gis-border hover:border-slate-500 bg-gis-panel text-xs font-medium text-slate-300">Satellite</button>
+                        <button onclick="setBasemap('osm')" id="base-osm" class="p-2 text-center rounded-lg border border-gis-border hover:border-slate-500 bg-gis-panel text-xs font-medium text-slate-300">Street Map</button>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-xs font-mono text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <i data-lucide="map" class="w-3.5 h-3.5 text-cyan-400"></i> Layer Aktif Peta
+                        </h3>
+                    </div>
+                    <div id="layer-list-container" class="space-y-2">
+                        <div id="no-layer-msg" class="text-xs text-slate-500 italic p-3 bg-gis-panel/50 rounded-xl border border-gis-border text-center">
+                            Belum ada file GeoTIFF/Vektor yang diunggah
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-content-upload" class="hidden flex-1 overflow-y-auto p-4 space-y-6">
+                <div>
+                    <h3 class="text-xs font-mono text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <i data-lucide="image" class="w-3.5 h-3.5 text-emerald-400"></i> Upload GeoTIFF (.tif / .tiff)
+                    </h3>
+                    <p class="text-[11px] text-slate-400 mb-3">Mendukung Orthomosaic & DEM hasil olahan drone.</p>
+                    
+                    <div class="p-4 bg-gis-panel rounded-xl border border-dashed border-slate-600 text-center hover:border-emerald-500 transition cursor-pointer" onclick="document.getElementById('tif-file-input').click()">
+                        <i data-lucide="file-spread" class="w-8 h-8 text-emerald-400 mx-auto mb-2"></i>
+                        <p class="text-xs text-slate-300 font-semibold">Pilih File GeoTIFF (.tif)</p>
+                        <p class="text-[10px] text-slate-500 mt-1">Disarankan ukuran file &lt; 150 MB</p>
+                        <input type="file" id="tif-file-input" accept=".tif, .tiff" class="hidden" onchange="handleTifUpload(event)">
+                    </div>
+
+                    <!-- Progress Loading Indicator -->
+                    <div id="tif-loading" class="hidden mt-3 p-3 bg-gis-dark border border-amber-500/30 rounded-xl space-y-2">
+                        <div class="flex items-center justify-between text-xs font-mono text-amber-400">
+                            <span class="flex items-center gap-2">
+                                <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                                <span id="loading-text">Membaca file TIF...</span>
+                            </span>
+                        </div>
+                        <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div id="loading-bar" class="bg-amber-400 h-full w-1/3 transition-all duration-300"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t border-gis-border pt-4">
+                    <h3 class="text-xs font-mono text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <i data-lucide="file-up" class="w-3.5 h-3.5 text-cyan-400"></i> Upload Vektor (GeoJSON / KML)
+                    </h3>
+                    <div class="p-4 bg-gis-panel rounded-xl border border-dashed border-slate-600 text-center hover:border-cyan-500 transition cursor-pointer" onclick="document.getElementById('file-input').click()">
+                        <i data-lucide="upload" class="w-8 h-8 text-slate-400 mx-auto mb-2"></i>
+                        <p class="text-xs text-slate-300 font-semibold">Pilih GeoJSON atau KML</p>
+                        <input type="file" id="file-input" accept=".geojson,.json,.kml" class="hidden" onchange="handleFileUpload(event)">
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-content-tools" class="hidden flex-1 overflow-y-auto p-4 space-y-6">
+                <div>
+                    <h3 class="text-xs font-mono text-slate-400 uppercase tracking-wider mb-2">Coordinate Inspector</h3>
+                    <div class="p-4 bg-gis-panel rounded-xl border border-gis-border space-y-2 font-mono text-xs">
+                        <div class="flex justify-between">
+                            <span class="text-slate-400">Latitude:</span>
+                            <span id="coord-lat" class="text-white font-semibold">-6.284500</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-400">Longitude:</span>
+                            <span id="coord-lng" class="text-white font-semibold">106.721400</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-3 bg-gis-dark border-t border-gis-border text-center text-[10px] text-slate-500 font-mono">
+                System Active &bull; PT. PILOT DRONE INDONESIA UTAMA &copy; 2026
+            </div>
+        </aside>
+
+        <main class="flex-1 relative bg-gis-dark">
+            <div id="map" class="w-full h-full z-10"></div>
+        </main>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        let map;
+        let basemaps = {};
+        let activeLayers = {};
+
+        const CENTER_LAT = -6.2845;
+        const CENTER_LNG = 106.7214;
+
+        // Registrasi Kode Proyeksi UTM Indonesia Umum untuk Proj4
+        if (typeof proj4 !== 'undefined') {
+            proj4.defs([
+                ["EPSG:32647", "+proj=utm +zone=47 +datum=WGS84 +units=m +no_defs"],
+                ["EPSG:32648", "+proj=utm +zone=48 +datum=WGS84 +units=m +no_defs"],
+                ["EPSG:32649", "+proj=utm +zone=49 +datum=WGS84 +units=m +no_defs"],
+                ["EPSG:32650", "+proj=utm +zone=50 +datum=WGS84 +units=m +no_defs"],
+                ["EPSG:32747", "+proj=utm +zone=47 +south +datum=WGS84 +units=m +no_defs"],
+                ["EPSG:32748", "+proj=utm +zone=48 +south +datum=WGS84 +units=m +no_defs"],
+                ["EPSG:32749", "+proj=utm +zone=49 +south +datum=WGS84 +units=m +no_defs"],
+                ["EPSG:32750", "+proj=utm +zone=50 +south +datum=WGS84 +units=m +no_defs"]
+            ]);
+        }
+
+        function initMap() {
+            map = L.map('map', {
+                center: [CENTER_LAT, CENTER_LNG],
+                zoom: 15,
+                zoomControl: true
+            });
+
+            basemaps['dark'] = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+            basemaps['satellite'] = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+            basemaps['osm'] = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+
+            map.on('mousemove', handleMapMouseMove);
+        }
+
+        // --- HANDLER GEOTIFF PEMBARUAN (OPTIMIZED & PROJECTION HANDLED) ---
+        function handleTifUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const loadingEl = document.getElementById('tif-loading');
+            const loadingText = document.getElementById('loading-text');
+            const loadingBar = document.getElementById('loading-bar');
+
+            loadingEl.classList.remove('hidden');
+            loadingBar.style.width = '20%';
+            loadingText.innerText = 'Membaca buffer file...';
+
+            // Peringatan jika file > 200MB
+            if (file.size > 200 * 1024 * 1024) {
+                if (!confirm("Ukuran file cukup besar (>200MB). Proses render mungkin membutuhkan waktu beberapa saat. Lanjutkan?")) {
+                    loadingEl.classList.add('hidden');
+                    return;
+                }
+            }
+
+            const reader = new FileReader();
+            reader.readAsArrayBuffer(file);
+
+            reader.onload = function(e) {
+                loadingBar.style.width = '50%';
+                loadingText.innerText = 'Menguraikan struktur GeoTIFF...';
+
+                setTimeout(() => {
+                    const arrayBuffer = e.target.result;
+
+                    parseGeoRaster(arrayBuffer).then(georaster => {
+                        loadingBar.style.width = '80%';
+                        loadingText.innerText = 'Rendering layer ke peta...';
+
+                        setTimeout(() => {
+                            try {
+                                const layer = new GeoRasterLayer({
+                                    georaster: georaster,
+                                    opacity: 0.85,
+                                    resolution: 64, // Diturunkan ke 64 agar rendering sangat cepat & tidak freeze
+                                    debugLevel: 0
+                                });
+
+                                layer.addTo(map);
+
+                                const layerId = 'tif_' + Date.now();
+                                activeLayers[layerId] = layer;
+
+                                // Pindahkan tampilan peta ke bounds raster
+                                const bounds = layer.getBounds();
+                                if (bounds && bounds.isValid()) {
+                                    map.fitBounds(bounds);
+                                }
+
+                                appendLayerUI(layerId, file.name, 'tif');
+                                loadingEl.classList.add('hidden');
+                                alert(`GeoTIFF "${file.name}" berhasil dimuat!`);
+                            } catch (renderErr) {
+                                loadingEl.classList.add('hidden');
+                                alert('Gagal merender GeoTIFF. Pastikan file ter-georeferensi dengan benar saat di-export.');
+                                console.error(renderErr);
+                            }
+                        }, 100);
+
+                    }).catch(err => {
+                        loadingEl.classList.add('hidden');
+                        alert('Gagal mengurai file GeoTIFF. File mungkin rusak atau format kompresi tidak didukung.');
+                        console.error("GeoRaster error:", err);
+                    });
+                }, 100);
+            };
+
+            reader.onerror = function() {
+                loadingEl.classList.add('hidden');
+                alert('Gagal membaca file dari penyimpanan lokal.');
+            };
+        }
+
+        // --- HANDLER VECTOR (GEOJSON / KML) ---
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            const fileName = file.name;
+            const extension = fileName.split('.').pop().toLowerCase();
+
+            reader.onload = function(e) {
+                try {
+                    let geojsonData;
+                    if (extension === 'kml') {
+                        const parser = new DOMParser();
+                        const kmlDom = parser.parseFromString(e.target.result, 'text/xml');
+                        geojsonData = toGeoJSON.kml(kmlDom);
+                    } else {
+                        geojsonData = JSON.parse(e.target.result);
+                    }
+
+                    const newLayer = L.geoJSON(geojsonData, {
+                        style: { color: '#06b6d4', weight: 3, fillOpacity: 0.3 }
+                    }).addTo(map);
+
+                    const layerId = 'vec_' + Date.now();
+                    activeLayers[layerId] = newLayer;
+
+                    map.fitBounds(newLayer.getBounds());
+                    appendLayerUI(layerId, fileName, 'vector');
+                } catch (err) {
+                    alert('File Vektor tidak valid.');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // Tambah Item Layer ke List Sidebar
+        function appendLayerUI(layerId, name, type) {
+            const container = document.getElementById('layer-list-container');
+            const noMsg = document.getElementById('no-layer-msg');
+            if (noMsg) noMsg.remove();
+
+            const div = document.createElement('div');
+            div.className = 'p-3 bg-gis-panel rounded-xl border border-gis-border flex flex-col gap-2';
+            div.id = `wrapper-${layerId}`;
+            
+            const colorClass = type === 'tif' ? 'text-emerald-400' : 'text-cyan-400';
+            const iconType = type === 'tif' ? 'RASTER TIF' : 'VEKTOR';
+            
+            div.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold ${colorClass} truncate max-w-[200px]" title="${name}">
+                        <input type="checkbox" id="layer-${layerId}" checked onchange="toggleLayer('${layerId}')" class="accent-emerald-500 rounded w-4 h-4 shrink-0">
+                        <span class="truncate">${name}</span>
+                    </label>
+                    <div class="flex items-center gap-1">
+                        <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">${iconType}</span>
+                        <button onclick="removeLayer('${layerId}')" class="text-rose-400 hover:text-rose-300 text-xs p-1">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 pt-1 border-t border-slate-700/50">
+                    <span class="text-[10px] text-slate-400">Opacity:</span>
+                    <input type="range" min="0" max="1" step="0.05" value="0.85" oninput="changeOpacity('${layerId}', this.value)" class="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                </div>
+            `;
+            container.appendChild(div);
+            lucide.createIcons();
+        }
+
+        function removeLayer(layerId) {
+            if (activeLayers[layerId]) {
+                map.removeLayer(activeLayers[layerId]);
+                delete activeLayers[layerId];
+            }
+            const el = document.getElementById(`wrapper-${layerId}`);
+            if (el) el.remove();
+        }
+
+        function toggleLayer(layerKey) {
+            const checkbox = document.getElementById(`layer-${layerKey}`);
+            if (checkbox.checked) {
+                map.addLayer(activeLayers[layerKey]);
+            } else {
+                map.removeLayer(activeLayers[layerKey]);
+            }
+        }
+
+        function changeOpacity(layerKey, opacity) {
+            if (activeLayers[layerKey]) {
+                if (activeLayers[layerKey].setOpacity) {
+                    activeLayers[layerKey].setOpacity(parseFloat(opacity));
+                } else if (activeLayers[layerKey].setStyle) {
+                    activeLayers[layerKey].setStyle({ fillOpacity: parseFloat(opacity) });
+                }
+            }
+        }
+
+        function setBasemap(type) {
+            Object.keys(basemaps).forEach(k => map.removeLayer(basemaps[k]));
+            basemaps[type].addTo(map);
+        }
+
+        function handleMapMouseMove(e) {
+            document.getElementById('header-coords').innerText = `Lat: ${e.latlng.lat.toFixed(6)}, Lon: ${e.latlng.lng.toFixed(6)}`;
+            document.getElementById('coord-lat').innerText = e.latlng.lat.toFixed(6);
+            document.getElementById('coord-lng').innerText = e.latlng.lng.toFixed(6);
+        }
+
+        function switchTab(tabName) {
+            ['layers', 'upload', 'tools'].forEach(t => {
+                const btn = document.getElementById(`tab-btn-${t}`);
+                const content = document.getElementById(`tab-content-${t}`);
+                if (t === tabName) {
+                    btn.className = "flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-2 border-b-2 border-emerald-500 text-emerald-400 bg-gis-panel/40";
+                    content.classList.remove('hidden');
+                } else {
+                    btn.className = "flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-2 border-b-2 border-transparent text-slate-400 hover:text-white";
+                    content.classList.add('hidden');
+                }
+            });
+        }
+
+        function resetMapView() {
+            map.setView([CENTER_LAT, CENTER_LNG], 15);
+        }
+
+        window.onload = function() {
+            initMap();
+        };
+    </script>
+</body>
+</html>
